@@ -5,31 +5,11 @@
 extern "C" {
 #endif
 
-const char *muthMessage();
-
-// 音程
-typedef enum EMuthInterval {
-  // 第2字节表示类型：纯10h、大20h、小30h、增40h、减50h
-  MUTH_INTERVAL_QUALITY_MASK = 0xf0,
-  MUTH_INTERVAL_QUALITY_PERFECT = 0x10,
-  MUTH_INTERVAL_QUALITY_MAJOR = 0x20,
-  MUTH_INTERVAL_QUALITY_MINOR = 0x30,
-  MUTH_INTERVAL_QUALITY_AUGMENTED = 0x40,
-  MUTH_INTERVAL_QUALITY_DIMINISHED = 0x50,
-  // 第一字节表示度数
-  MUTH_INTERVAL_NUMBER_MASK = 0xf,
-  MUTH_INTERVAL_PERF_1 = MUTH_INTERVAL_QUALITY_PERFECT | 1, // 纯1
-  MUTH_INTERVAL_MIN_2 = MUTH_INTERVAL_QUALITY_MINOR | 2, // 小2
-  MUTH_INTERVAL_MAJ_2 = MUTH_INTERVAL_QUALITY_MAJOR | 2, // 大2
-  MUTH_INTERVAL_AUG_2 = MUTH_INTERVAL_QUALITY_AUGMENTED | 2, // 增2
-  MUTH_INTERVAL_DIM_4 = MUTH_INTERVAL_QUALITY_DIMINISHED | 3, // 减3
-  MUTH_INTERVAL_MIN_3 = MUTH_INTERVAL_QUALITY_MINOR | 3, // 小3
-  MUTH_INTERVAL_MAJ_3 = MUTH_INTERVAL_QUALITY_MAJOR | 3, // 大3
-  MUTH_INTERVAL_AUG_4 = MUTH_INTERVAL_QUALITY_AUGMENTED | 3, // 增3
-  MUTH_INTERVAL_PERF_4 = MUTH_INTERVAL_QUALITY_PERFECT | 4, // 纯4
-  MUTH_INTERVAL_PERF_5 = MUTH_INTERVAL_QUALITY_PERFECT | 5, // 纯5
-  MUTH_INTERVAL_PERF_8 = MUTH_INTERVAL_QUALITY_PERFECT | 8, // 纯8
-} EMuthInterval;
+// 库初始化、销毁、错误消息API
+typedef struct MuthLib MuthLib;
+MuthLib *muthLibInit(size_t messageBufSize);
+void muthLibDestroy(MuthLib *lib);
+const char *muthLibMessage(MuthLib *lib);
 
 // 升降记号
 typedef enum EMuthAccidentalCode {
@@ -39,7 +19,7 @@ typedef enum EMuthAccidentalCode {
   MUTH_ACCIDENTAL_FLAT, // b
   MUTH_ACCIDENTAL_DOUBLE_SHARP, // ##
   MUTH_ACCIDENTAL_DOUBLE_FLAT, // x
-} EMuthAccidentalCode;
+} MuthAccidentalCode;
 
 // 音名
 typedef enum EMuthPitchName {
@@ -50,11 +30,11 @@ typedef enum EMuthPitchName {
   MUTH_PITCH_NAME_G = 'G',
   MUTH_PITCH_NAME_A = 'A',
   MUTH_PITCH_NAME_B = 'B',
-} EMuthPitchName;
+} MuthPitchName;
 
 typedef struct MuthPitch {
-  EMuthPitchName pitchName; // 音名
-  EMuthAccidentalCode accidentalCode; // 升降号
+  MuthPitchName pitchName; // 音名
+  MuthAccidentalCode accidentalCode; // 升降号
 } MuthPitch;
 
 // 科学音高记号，中央C为C4。不同的记号可以表示同一个音高
@@ -66,56 +46,41 @@ typedef struct MuthSpn {
 // 调号，C大调/A小调为0，增加升号个数用正数表示，增加降号个数用负数表示
 typedef signed char MuthKeySignature;
 
+// MIDI 转频率，MIDI码超出范围返回-1
+float muthMidiToFreq(MuthLib *lib, int midiCode);
+
+// 频率转 MIDI，返回最接近该频率的MIDI码，频率错误输出-1
+int muthFreqToMidi(MuthLib *lib, float freq);
+
 // MIDI 转音名，只输出一种可能
 int muthMidiToPitch1(
     int inMidiCode,
-    struct MuthSpn *outMuthSpn
+    MuthSpn *outMuthSpn
 );
 
-// MIDI 转音名，输出N种可能
+// MIDI 转音名，输出至多N种可能，返回输出的可能种数，出错返回-1
 int muthMidiToPitchN(
     int inMidiCode,
     int inN,
-    struct MuthSpn *outMuthSpnArr
+    MuthSpn *outMuthSpnArr
 );
 
-// 音名转MIDI，成功返回MIDI码，无法转换返回-1
-int muthSpnToMidi(
-    struct MuthSpn *inSpn
-);
+// 音名转MIDI，成功返回MIDI码，空指针返回-1，无法转换返回-2
+int muthSpnToMidi(MuthLib *lib, MuthSpn *inSpn);
 
-// 比较两个音高符号的频率，l==r返回0，l<r返回负数，l>r返回正数。空指针行为未定义。
-int muthSpnCmp(
-    struct MuthSpn *lhs,
-    struct MuthSpn *rhs
-);
+// 比较两个音高符号，l==r返回0，l<r返回负数，l>r返回正数。空指针行为未定义。
+int muthSpnCmp(MuthSpn *lhs, MuthSpn *rhs);
 
-// 计算音高频率，错误返回-1
-float muthSpnFreq(
-    struct MuthSpn *spn
-);
+// 计算音高频率，空指针返回-1，音符错误返回-2
+float muthSpnToFreq(MuthLib *lib, MuthSpn *inSpn);
 
 // 从频率构造音符，构造成功返回0，失败返回-1
-int muthSpnFromFreq(
-    float inFreq,
-    struct MuthSpn *outSpn
-);
+int muthFreqToSpn(MuthLib *lib, float inFreq, MuthSpn *outSpn);
 
 // 计算音名增减
-int muthPit(
-    EMuthPitchName inPitchName,
-    int inNum,
-    EMuthPitchName *outPitchName
-);
+int muthPitchNameCal(MuthLib *lib, MuthPitchName inPitchName, int inNum, MuthPitchName *outPitchName);
 
-int muthPitchCal(
-    MuthPitch *inPitch,
-    int inNum,
-    MuthPitch *outPitch
-);
-
-// 和弦计算
-
+int muthPitchCal(MuthLib *lib, MuthPitch *inPitch, int inNum, MuthPitch *outPitch);
 
 #ifdef __cplusplus
 }; // extern "C"
